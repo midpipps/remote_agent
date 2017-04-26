@@ -3,6 +3,7 @@ flasknmapper/static/uploads/
 flaskcontrol/static/received/
 jobagent/results/
 jobagent/futurescans/
+jobagent/agent_config.ini
 /*.xml
 
 #vscode ignore
