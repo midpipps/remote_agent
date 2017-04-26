@@ -77,7 +77,7 @@ class AgentServerProtocol(asyncio.Protocol):
                     self.current_job = None
                 else:
                     self.transport.close()
-            elif self.current_job and self.current_job == 'RECEIVEDJOBDATA':
+            elif self.current_job and self.current_job == 'RECEIVEDFILE':
                 #moves the jobs that have been received to the sent data
                 filename = self.getnextline(True)
                 shutil.move(configuration.RESULTSLOCATION + filename,
