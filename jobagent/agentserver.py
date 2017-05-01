@@ -80,9 +80,9 @@ class AgentServerProtocol(asyncio.Protocol):
             elif self.current_job and self.current_job == 'RECEIVEDFILE':
                 #moves the jobs that have been received to the sent data
                 filename = self.getnextline(True)
-				if os.path.exists(configuration.RESULTSLOCATION + filename):
-					shutil.move(configuration.RESULTSLOCATION + filename,
-									configuration.RESULTSLOCATION + configuration.FILESSENTFOLDER + filename)
+                if os.path.exists(configuration.RESULTSLOCATION + filename):
+                    shutil.move(configuration.RESULTSLOCATION + filename,
+                                configuration.RESULTSLOCATION + configuration.FILESSENTFOLDER + filename)
             elif self.current_job and self.current_job == 'NEWJOBDATA':
                 #need to clear out the scan information file and update it with the new information sent
                 if self.linecount == -1 and self.getnextline(False):
