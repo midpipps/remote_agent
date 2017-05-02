@@ -215,7 +215,7 @@ class AgentManager(threading.Thread):
             tempcounts = {}
             for key, val in self.workers.items():
                 if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-                    logging.debug(val[1].command + ":" + val[0].stdout.readline())
+                    logging.debug(val[1].command + ":" + str(val[0].stdout.readline()))
                 if not tempcounts.get(val[1].command):
                     tempcounts[val[1].command] = 1
                 else:
