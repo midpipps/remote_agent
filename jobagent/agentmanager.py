@@ -24,6 +24,7 @@ class ScheduledJobData(object):
         self.timeframe = ''
         self.command = ''
         self.options = ''
+        self.currentdatetimeformat = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
         if not jobtype:
             raise ValueError('jobs must have jobtype to run')
         self.jobtype = jobtype
@@ -53,7 +54,7 @@ class ScheduledJobData(object):
         takes the data it has of commands and options and created the array for the processing
         '''
         tempoutputstring = self.jobtype.output_formatstring.format((configuration.TEMPSCANSFOLDER +
-                                                                    datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
+                                                                    self.currentdatetimeformat + '-' +
                                                                     self.getencodedname() + self.jobtype.output_extension))
         tempcommandstring = self.jobtype.program.format(self.options, tempoutputstring)
         temp = shlex.split(tempcommandstring)
@@ -66,10 +67,10 @@ class ScheduledJobData(object):
         '''
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
-                        datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
+                        self.currentdatetimeformat + '-' +
                         self.getencodedname() + self.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
-                        datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
+                        self.currentdatetimeformat + '-' +
                         self.getencodedname() + self.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
@@ -214,9 +215,6 @@ class AgentManager(threading.Thread):
             #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
             tempcounts = {}
             for key, val in self.workers.items():
-                if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-                    for theline in val[0].stdout:
-                     logging.debug(val[1].command + ":" + theline.decode())
                 if not tempcounts.get(val[1].command):
                     tempcounts[val[1].command] = 1
                 else:
@@ -237,8 +235,9 @@ class AgentManager(threading.Thread):
                     scanlog.write(val.getencodedname() + ' Started\n')
                     scanlog.close()
                     logging.debug('the job array is %s', val.getjobarray())
-                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT),
-                                                          val)
+                    outputvalue = open(val.currentdatetimeformat + '-' + val.getencodedname() + ".output", 'w')
+                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
+                                                          val, outputvalue)
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -251,10 +250,7 @@ class AgentManager(threading.Thread):
         tempkeys = list(self.workers.keys())
         for key in tempkeys:
             if self.workers.get(key)[0].poll() is not None:
-                scanoutputlog = open('processlog.log', 'a+')
-                for text in self.workers[key][0].stdout:
-                    scanoutputlog.write(text.decode('UTF-8'))
-                scanoutputlog.close()
+                self.workers[key][2].close()
                 self.workers[key][1].moveresult()
                 formatstring = ""
                 if self.workers[key][1].timeframe == 'M':
