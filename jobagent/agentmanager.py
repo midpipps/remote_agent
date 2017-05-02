@@ -214,7 +214,7 @@ class AgentManager(threading.Thread):
             #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
             tempcounts = {}
             for key, val in self.workers.items():
-                if logging.getEffectiveLevel() == logging.DEBUG  && val[0].stdout:
+                if logging.getEffectiveLevel() == logging.DEBUG  and val[0].stdout:
                     logging.DEBUG(val[1].command + ":" + val[0].stdout)
                 if not tempcounts.get(val[1].command):
                     tempcounts[val[1].command] = 1
