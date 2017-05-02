@@ -211,9 +211,11 @@ class AgentManager(threading.Thread):
             scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEMONTHLYSCANFORMAT) + '.log', 'r')
             scanloglines += scanlog.readlines()
             scanlog.close()
-            #loop over the list of workers and get how many jobs are of this type
+            #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
             tempcounts = {}
             for key, val in self.workers.items():
+				if logging.getEffectiveLevel() == logging.DEBUG  && val[0].stdout:
+					logging.DEBUG(val[1].command + ":" + val[0].stdout)
                 if not tempcounts.get(val[1].command):
                     tempcounts[val[1].command] = 1
                 else:

@@ -46,7 +46,7 @@ def setup():
     some simple checks and setup to make sure we can do everything we need to do
     '''
     #check if proper folders are there so that we can create and delete files as needed
-    logfilehandler = RotatingFileHandler(configuration.LOGLOCATION, backupCount=3, maxBytes=1000)
+    logfilehandler = RotatingFileHandler(configuration.LOGLOCATION, backupCount=3, maxBytes=100000)
     logfilehandler.setFormatter(LOGFORMATTER)
     LOGGER.addHandler(logfilehandler)
     LOGGER.setLevel(configuration.LOGGINGLEVEL)
