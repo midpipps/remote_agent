@@ -234,7 +234,7 @@ class AgentManager(threading.Thread):
                     scanlog.write(val.getencodedname() + ' Started\n')
                     scanlog.close()
                     logging.debug('the job array is %s', val.getjobarray())
-					datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+                    datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
                     outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
                     self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
                                                           val, outputvalue, datestring)
