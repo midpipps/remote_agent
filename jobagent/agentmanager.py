@@ -24,7 +24,6 @@ class ScheduledJobData(object):
         self.timeframe = ''
         self.command = ''
         self.options = ''
-        self.currentdatetimeformat = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
         if not jobtype:
             raise ValueError('jobs must have jobtype to run')
         self.jobtype = jobtype
@@ -54,23 +53,23 @@ class ScheduledJobData(object):
         takes the data it has of commands and options and created the array for the processing
         '''
         tempoutputstring = self.jobtype.output_formatstring.format((configuration.TEMPSCANSFOLDER +
-                                                                    self.currentdatetimeformat + '-' +
+                                                                    datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
                                                                     self.getencodedname() + self.jobtype.output_extension))
         tempcommandstring = self.jobtype.program.format(self.options, tempoutputstring)
         temp = shlex.split(tempcommandstring)
         logging.debug(temp)
         return temp
 
-    def moveresult(self):
+    def moveresult(self, datestring):
         '''
         moves the output files of the scans from 1 place to another
         '''
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
-                        self.currentdatetimeformat + '-' +
+                        datestring + '-' +
                         self.getencodedname() + self.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
-                        self.currentdatetimeformat + '-' +
+                        datestring + '-' +
                         self.getencodedname() + self.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
@@ -235,9 +234,10 @@ class AgentManager(threading.Thread):
                     scanlog.write(val.getencodedname() + ' Started\n')
                     scanlog.close()
                     logging.debug('the job array is %s', val.getjobarray())
-                    outputvalue = open(configuration.TEMPSCANSFOLDER + val.currentdatetimeformat + '-' + val.getencodedname() + ".output", 'w')
+					datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+                    outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
                     self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
-                                                          val, outputvalue)
+                                                          val, outputvalue, datestring)
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -251,7 +251,7 @@ class AgentManager(threading.Thread):
         for key in tempkeys:
             if self.workers.get(key)[0].poll() is not None:
                 self.workers[key][2].close()
-                self.workers[key][1].moveresult()
+                self.workers[key][1].moveresult(self.workers[key][3])
                 formatstring = ""
                 if self.workers[key][1].timeframe == 'M':
                     formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
