@@ -228,6 +228,9 @@ class AgentManager(threading.Thread):
                         formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
                     elif val.timeframe == 'D':
                         formatstring = configuration.DATETIMEFILEAPPENDFORMAT
+                    loglocation = (configuration.FUTURESCANSFOLDER +
+                                   datetime.date.today().strftime(formatstring) +
+                                   '.log')
                     scanlog = open(configuration.FUTURESCANSFOLDER +
                                    datetime.date.today().strftime(formatstring) +
                                    '.log', 'a')
@@ -237,7 +240,7 @@ class AgentManager(threading.Thread):
                     datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
                     outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
                     self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
-                                                          val, outputvalue, datestring)
+                                                          val, outputvalue, datestring, loglocation)
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -258,8 +261,7 @@ class AgentManager(threading.Thread):
                 elif self.workers[key][1].timeframe == 'D':
                     formatstring = configuration.DATETIMEFILEAPPENDFORMAT
                 del self.workers[key]
-                scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(formatstring) +
-                               '.log', 'a')
+                scanlog = open(self.workers[key][4], 'a')
                 scanlog.write(key + ' Finished\n')
                 scanlog.close()
         logging.debug("Num active workers %d", len(self.workers))
