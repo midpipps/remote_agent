@@ -231,9 +231,7 @@ class AgentManager(threading.Thread):
                     loglocation = (configuration.FUTURESCANSFOLDER +
                                    datetime.date.today().strftime(formatstring) +
                                    '.log')
-                    scanlog = open(configuration.FUTURESCANSFOLDER +
-                                   datetime.date.today().strftime(formatstring) +
-                                   '.log', 'a')
+                    scanlog = open(loglocation, 'a')
                     scanlog.write(val.getencodedname() + ' Started\n')
                     scanlog.close()
                     logging.debug('the job array is %s', val.getjobarray())
