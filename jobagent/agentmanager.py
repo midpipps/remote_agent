@@ -253,13 +253,8 @@ class AgentManager(threading.Thread):
             if self.workers.get(key)[0].poll() is not None:
                 self.workers[key][2].close()
                 self.workers[key][1].moveresult(self.workers[key][3])
-                formatstring = ""
-                if self.workers[key][1].timeframe == 'M':
-                    formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
-                elif self.workers[key][1].timeframe == 'D':
-                    formatstring = configuration.DATETIMEFILEAPPENDFORMAT
-                del self.workers[key]
                 scanlog = open(self.workers[key][4], 'a')
                 scanlog.write(key + ' Finished\n')
                 scanlog.close()
+                del self.workers[key]
         logging.debug("Num active workers %d", len(self.workers))
