@@ -54,7 +54,7 @@ class AgentServerProtocol(asyncio.Protocol):
         logging.debug(self.bytecount)
         logging.debug(self.recieveddata)
         if len(self.recieveddata) >= self.bytecount:
-            #we have completed recieving all the data and can decode and operate on iter
+            #we have completed recieving all the data and can decode and operate on it
             self.operatingdata += self.decryptdata(bytes(self.recieveddata[:self.bytecount + 1])).decode('UTF-8')
             self.recieveddata = self.recieveddata[self.bytecount + 1:]
             self.bytecount = -1
@@ -74,12 +74,16 @@ class AgentServerProtocol(asyncio.Protocol):
                     temp = test.read()
                     self.sendmessage(('filename:' + onlyfiles[0] + '\n').encode("UTF-8") + temp)
                     test.close()
-                    shutil.move(configuration.RESULTSLOCATION + onlyfiles[0],
-                                configuration.RESULTSLOCATION + configuration.FILESSENTFOLDER + onlyfiles[0])
                     self.current_job = None
                 else:
                     self.transport.close()
-
+            elif self.current_job and self.current_job == 'RECEIVEDFILE':
+                #moves the jobs that have been received to the sent data
+                filename = self.getnextline(True)
+                if os.path.exists(configuration.RESULTSLOCATION + filename):
+                    shutil.move(configuration.RESULTSLOCATION + filename,
+                                configuration.RESULTSLOCATION + configuration.FILESSENTFOLDER + filename)
+                self.current_job = None
             elif self.current_job and self.current_job == 'NEWJOBDATA':
                 #need to clear out the scan information file and update it with the new information sent
                 if self.linecount == -1 and self.getnextline(False):

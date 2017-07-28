@@ -60,16 +60,16 @@ class ScheduledJobData(object):
         logging.debug(temp)
         return temp
 
-    def moveresult(self):
+    def moveresult(self, datestring):
         '''
         moves the output files of the scans from 1 place to another
         '''
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
-                        datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
+                        datestring + '-' +
                         self.getencodedname() + self.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
-                        datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
+                        datestring + '-' +
                         self.getencodedname() + self.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
@@ -211,7 +211,7 @@ class AgentManager(threading.Thread):
             scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEMONTHLYSCANFORMAT) + '.log', 'r')
             scanloglines += scanlog.readlines()
             scanlog.close()
-            #loop over the list of workers and get how many jobs are of this type
+            #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
             tempcounts = {}
             for key, val in self.workers.items():
                 if not tempcounts.get(val[1].command):
@@ -228,14 +228,17 @@ class AgentManager(threading.Thread):
                         formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
                     elif val.timeframe == 'D':
                         formatstring = configuration.DATETIMEFILEAPPENDFORMAT
-                    scanlog = open(configuration.FUTURESCANSFOLDER +
+                    loglocation = (configuration.FUTURESCANSFOLDER +
                                    datetime.date.today().strftime(formatstring) +
-                                   '.log', 'a')
+                                   '.log')
+                    scanlog = open(loglocation, 'a')
                     scanlog.write(val.getencodedname() + ' Started\n')
                     scanlog.close()
                     logging.debug('the job array is %s', val.getjobarray())
-                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT),
-                                                          val)
+                    datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+                    outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
+                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
+                                                          val, outputvalue, datestring, loglocation)
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -248,19 +251,10 @@ class AgentManager(threading.Thread):
         tempkeys = list(self.workers.keys())
         for key in tempkeys:
             if self.workers.get(key)[0].poll() is not None:
-                scanoutputlog = open('processlog.log', 'a+')
-                for text in self.workers[key][0].stdout:
-                    scanoutputlog.write(text.decode('UTF-8'))
-                scanoutputlog.close()
-                self.workers[key][1].moveresult()
-                formatstring = ""
-                if self.workers[key][1].timeframe == 'M':
-                    formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
-                elif self.workers[key][1].timeframe == 'D':
-                    formatstring = configuration.DATETIMEFILEAPPENDFORMAT
-                del self.workers[key]
-                scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(formatstring) +
-                               '.log', 'a')
+                self.workers[key][2].close()
+                self.workers[key][1].moveresult(self.workers[key][3])
+                scanlog = open(self.workers[key][4], 'a')
                 scanlog.write(key + ' Finished\n')
                 scanlog.close()
+                del self.workers[key]
         logging.debug("Num active workers %d", len(self.workers))
