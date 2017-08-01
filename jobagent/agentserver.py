@@ -59,6 +59,7 @@ class AgentServerProtocol(asyncio.Protocol):
             self.recieveddata = self.recieveddata[self.bytecount + 1:]
             self.bytecount = -1
 
+            #pull out the current job information
             logging.debug('Recieved "%s"', self.operatingdata)
             if not self.current_job:
                 self.current_job = self.getnextline(True)
@@ -66,8 +67,8 @@ class AgentServerProtocol(asyncio.Protocol):
                 logging.info('operatingdata is: %s', self.operatingdata)
 
             if self.current_job and self.current_job == 'GETFILES':
+                #sends the files one by one to the calling system
                 onlyfiles = [f for f in os.listdir(configuration.RESULTSLOCATION) if os.path.isfile(os.path.join(configuration.RESULTSLOCATION, f))]
-                numfiles = len(onlyfiles)
                 if onlyfiles:
                     logging.debug('Sending %s', onlyfiles[0])
                     test = open(configuration.RESULTSLOCATION + onlyfiles[0], 'rb')
@@ -78,7 +79,7 @@ class AgentServerProtocol(asyncio.Protocol):
                 else:
                     self.transport.close()
             elif self.current_job and self.current_job == 'RECEIVEDFILE':
-                #moves the jobs that have been received to the sent data
+                #moves the jobs that have been received by the calling system to the sent data
                 filename = self.getnextline(True)
                 if os.path.exists(configuration.RESULTSLOCATION + filename):
                     shutil.move(configuration.RESULTSLOCATION + filename,
@@ -114,6 +115,9 @@ class AgentServerProtocol(asyncio.Protocol):
                 #this should stop all scanning
                 self.transport.close()
                 self.loop.stop()
+            elif self.current_job and self.current_job == 'GETRUNNINGPROCESSES':
+                #get the currently running processes from the agentmanager
+                pass
             else:
                 logging.debug('Closing connection as there is nothing to do')
                 self.current_job = None

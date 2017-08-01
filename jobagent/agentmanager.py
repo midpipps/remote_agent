@@ -60,20 +60,6 @@ class ScheduledJobData(object):
         logging.debug(temp)
         return temp
 
-    def moveresult(self, datestring):
-        '''
-        moves the output files of the scans from 1 place to another
-        '''
-        try:
-            shutil.move(configuration.TEMPSCANSFOLDER +
-                        datestring + '-' +
-                        self.getencodedname() + self.jobtype.output_extension,
-                        configuration.RESULTSLOCATION +
-                        datestring + '-' +
-                        self.getencodedname() + self.jobtype.output_extension)
-        except Exception as ex:
-            logging.error("There was an error moving the result files" + str(ex))
-
 class JobType(object):
     '''
     keeps the types and options of the Job types from a file.
@@ -231,14 +217,12 @@ class AgentManager(threading.Thread):
                     loglocation = (configuration.FUTURESCANSFOLDER +
                                    datetime.date.today().strftime(formatstring) +
                                    '.log')
-                    scanlog = open(loglocation, 'a')
-                    scanlog.write(val.getencodedname() + ' Started\n')
-                    scanlog.close()
+                    
                     logging.debug('the job array is %s', val.getjobarray())
                     datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
-                    outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
-                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
-                                                          val, outputvalue, datestring, loglocation)
+                    self.workers[val.getencodedname()] = Worker(val, datestring, loglocation)
+                    self.workers[val.getencodedname()].start()
+
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -250,11 +234,69 @@ class AgentManager(threading.Thread):
         '''
         tempkeys = list(self.workers.keys())
         for key in tempkeys:
-            if self.workers.get(key)[0].poll() is not None:
-                self.workers[key][2].close()
-                self.workers[key][1].moveresult(self.workers[key][3])
-                scanlog = open(self.workers[key][4], 'a')
-                scanlog.write(key + ' Finished\n')
-                scanlog.close()
+            if not self.workers.get(key).isrunning():
+                self.workers[key].close()
                 del self.workers[key]
         logging.debug("Num active workers %d", len(self.workers))
+
+class Worker(object):
+    '''
+    Keep track of all the data from the worker
+    '''
+    def __init__(self, scheduledjobdata=None, datestring=None, loglocation=None):
+        '''
+        Constructor
+        '''
+        self._subp = None
+        self._scheduledjobdata = scheduledjobdata
+        self._joboutputfile = None
+        self._datestring = datestring
+        self._loglocation = loglocation
+        self._started = False
+    
+    def getpid(self):
+        '''
+        get the processid of the current process
+        '''
+        return self._subp.pid
+
+    def isrunning(self):
+        '''
+        check if the process is running
+        '''
+        return self._started and self._subp and self._subp.poll() is None
+
+    def close(self):
+        '''
+        close/stop/cleanup whatever we have running
+        '''
+        self.moveresult()
+        self._joboutputfile.close()
+        scanlog = open(self._loglocation, 'a')
+        scanlog.write(self._scheduledjobdata.getencodedname() + ' Finished\n')
+        scanlog.close()
+
+    def run(self):
+        '''
+        setup and start the sub process
+        '''
+        self._joboutputfile = open(configuration.TEMPSCANSFOLDER + self._datestring + '-' + self._scheduledjobdata.getencodedname() + ".output", 'w')
+        self._subp = subprocess.Popen(self._scheduledjobdata.getjobarray(), stdout=self._joboutputfile, stderr=subprocess.STDOUT)
+        self._started = True
+        scanlog = open(self._loglocation, 'a')
+        scanlog.write(self._scheduledjobdata.getencodedname() + ' Started\n')
+        scanlog.close()
+
+    def moveresult(self):
+        '''
+        moves the output files of the scans from 1 place to another
+        '''
+        try:
+            shutil.move(configuration.TEMPSCANSFOLDER +
+                        self._datestring + '-' +
+                        self._scheduledjobdata.getencodedname() + self._scheduledjobdata.jobtype.output_extension,
+                        configuration.RESULTSLOCATION +
+                        self._datestring + '-' +
+                        self._scheduledjobdata.getencodedname() + self._scheduledjobdata.jobtype.output_extension)
+        except Exception as ex:
+            logging.error("There was an error moving the result files" + str(ex))
