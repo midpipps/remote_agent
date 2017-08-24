@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 import configuration
 from cryptography.fernet import Fernet
 
@@ -101,7 +102,7 @@ class AgentServerProtocol(asyncio.Protocol):
                     outfil.close()
                     self.current_job = None
                     self.transport.close()
-                    configuration.WORKQUEUEU.put('schedule file changed')
+                    configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'schedule file changed')
                 self.sendmessage(('DONE\n').encode('UTF-8'))
             elif self.current_job and self.current_job == 'CURRENTJOBDATA':
                 temp = ""
@@ -116,8 +117,12 @@ class AgentServerProtocol(asyncio.Protocol):
                 self.transport.close()
                 self.loop.stop()
             elif self.current_job and self.current_job == 'GETRUNNINGPROCESSES':
-                #get the currently running processes from the agentmanager
-                pass
+                #will want to create a special id for these sooner or later so there is no cross talk
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'running process list')
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(configuration.THREADUDPATETIMING)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
             else:
                 logging.debug('Closing connection as there is nothing to do')
                 self.current_job = None

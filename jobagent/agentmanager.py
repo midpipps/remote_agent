@@ -194,11 +194,11 @@ class AgentManager(threading.Thread):
         '''
         checks the queue for any new items and processes them if needed.
         '''
-        if not configuration.WORKQUEUEU.empty():
+        if not configuration.MESSAGES.hasmessages(configuration.MANAGERKEY):
             #the queue has stuff in it we should probably act upon it
             logging.debug('data found in queue working on it')
-            queueitem = configuration.WORKQUEUEU.get()
-            if queueitem == 'schedule file changed':
+            queueitem = configuration.MESSAGES.getnextmessage(configuration.MANAGERKEY)
+            if queueitem[1] == 'schedule file changed':
                 if os.path.exists(configuration.FUTURESCANSFOLDER + configuration.FUTURESCANSFILE):
                     fil = open(configuration.FUTURESCANSFOLDER + configuration.FUTURESCANSFILE, 'r')
                     filedata = fil.readlines()
@@ -220,6 +220,11 @@ class AgentManager(threading.Thread):
                     logging.debug(str(self.nextwork))
                 else:
                     logging.error('The file was locked or does not exist will try to reload later')
+            elif queueitem[1] == 'running process list':
+                returnstring = 'PID|JOBSTRING|FILENAME\n'
+                for worker in self.workers:
+                    returnstring += worker.getpid() + '|' + worker.getjobstring() + '|' + worker.getjoboutputfilename() + '\n'
+                configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
 
     def keepworkqueuworking(self):
         '''
@@ -227,7 +232,7 @@ class AgentManager(threading.Thread):
         '''
         #now on to setting up workers if we have not so far set them up
         if len(self.workers) < configuration.MAXSCANNERS and len(self.nextwork) > 0:
-            #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
+            #loop over the list of workers and get how many jobs are of this type
             tempcounts = {}
             for key, val in self.workers.items():
                 if not tempcounts.get(val[1].command):
@@ -256,7 +261,7 @@ class AgentManager(threading.Thread):
                 self.workers[key].close()
                 if self.workers[key]._scheduledjobdata.timeframe == 'S':
                     #single ran 1 time remove from nextwork
-                    self.nextwork.pop(self.workers[key]._scheduledjobdata.jobstring, None)
+                    self.nextwork.pop(self.workers[key].getjobstring(), None)
                 del self.workers[key]
         logging.debug("Num active workers %d", len(self.workers))
 
@@ -312,7 +317,7 @@ class Worker(object):
         setup and start the sub process
         '''
         logging.debug('the starting job array is %s', self.getjobarray())
-        self._joboutputfile = open(configuration.TEMPSCANSFOLDER + self._datestring + '-' + self._scheduledjobdata.getencodedname() + ".output", 'w')
+        self._joboutputfile = open(configuration.TEMPSCANSFOLDER + self.getjoboutputfilename(), 'w')
         self._subp = subprocess.Popen(self.getjobarray(), stdout=self._joboutputfile, stderr=subprocess.STDOUT)
         self._started = True
         self._scheduledjobdata.addlog(ScheduledJobData.JOBSTARTSTRING)
@@ -362,3 +367,21 @@ class Worker(object):
             self._subp.terminate()
             self.close()
             self._started = False
+
+    def getjobstring(self):
+        '''
+        get the jobstring from the scheduled job data
+        '''
+        return self._scheduledjobdata.jobstring
+
+    def gettimeframe(self):
+        '''
+        get the timeframe from the scheduled job data
+        '''
+        return self._scheduledjobdata.timeframe
+
+    def getjoboutputfilename(self):
+        '''
+        get the output filename for the job
+        '''
+        return self._datestring + '-' + self._scheduledjobdata.getencodedname() + ".output"
