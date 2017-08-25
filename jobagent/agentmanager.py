@@ -67,6 +67,7 @@ class ScheduledJobData(object):
         '''
         Set the next run time for the process
         '''
+        finalstartdate = self.nextruntime
         if not self.nextruntime:
             if not os.path.exists(configuration.FUTURESCANSFOLDER +
                                   self.getencodedname() + '.log'):
@@ -74,9 +75,11 @@ class ScheduledJobData(object):
                 fil = open(configuration.FUTURESCANSFOLDER + self.getencodedname() + '.log', 'x')
                 fil.close()
                 self.nextruntime = datetime.datetime.now()
+                return
             elif self.timeframe == 'S':
                 #Instantaneous need to run the scan as soon as possible
                 self.nextruntime = datetime.datetime.now()
+                return
             else:
                 #we need to check the file for last completed run and compare it to the
                 #run schedule to figure out if we need a run on it or not.
@@ -89,24 +92,26 @@ class ScheduledJobData(object):
                             finalstart = line
 
                 #pull the date
-                finalstartdate = datetime.datetime(1980, 1, 1, 12, 00)
                 if ' - ' in finalstart:
                     finalstartdate = datetime.datetime.strptime(finalstart.split(' - ')[0], ScheduledJobData.LOGTIMEFORMAT)
-
-                #update the nextruntime based on field
-                if self.timeframe == 'H':
-                    self.nextruntime = finalstartdate + datetime.timedelta(hours=1)
-                elif self.timeframe == 'D':
-                    self.nextruntime = finalstartdate + datetime.timedelta(days=1)
-                elif self.timeframe == 'M':
-                    self.nextruntime = finalstartdate + datetime.timedelta(days=32)
-                    self.nextruntime = self.nextruntime.replace(day=1)
-                elif self.timeframe == 'Y':
-                    self.nextruntime = finalstartdate.replace(year=finalstartdate.year + 1, month=1, day=1)
                 else:
-                    #unknown timebase do not run
-                    self.nextruntime = None
-                    self.addlog("Unknown Time Base did not run")
+                    self.nextruntime = datetime.datetime.now()
+                    return
+
+        #update the nextruntime based on field
+        if self.timeframe == 'H' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(hours=1)
+        elif self.timeframe == 'D' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(days=1)
+        elif self.timeframe == 'M' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(days=32)
+            self.nextruntime = self.nextruntime.replace(day=1)
+        elif self.timeframe == 'Y' and finalstartdate:
+            self.nextruntime = finalstartdate.replace(year=finalstartdate.year + 1, month=1, day=1)
+        else:
+            #unknown timebase do not run
+            self.nextruntime = None
+            self.addlog("Unknown Time Base did not run")
     def needsrun(self):
         '''
         checks the log files to see if it should be run based on its time base
@@ -229,8 +234,8 @@ class AgentManager(threading.Thread):
                     logging.error('The file was locked or does not exist will try to reload later')
             elif queueitem[1] == 'workqueue list':
                 returnstring = 'TIMEFRAME|COMMAND|OPTIONS|NEXTRUNTIME\n'
-                for queueitem in self.nextwork.values():
-                    returnstring += queueitem.timeframe + "|" + queueitem.command + "|" + queueitem.options + '|' + queueitem.nextruntime.strftime(ScheduledJobData.LOGTIMEFORMAT) + '\n'
+                for workqueueitem in self.nextwork.values():
+                    returnstring += workqueueitem.timeframe + "|" + workqueueitem.command + "|" + workqueueitem.options + '|' + (workqueueitem.nextruntime.strftime(ScheduledJobData.LOGTIMEFORMAT) if workqueueitem.nextruntime else 'No run scheduled') + '\n'
                 configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
             elif queueitem[1] == 'running process list':
                 returnstring = 'PID|JOBSTRING|FILENAME\n'
@@ -256,6 +261,7 @@ class AgentManager(threading.Thread):
             for val in self.nextwork.values():
                 if self.jobneedsrun(val, tempcounts):
                     self.workers[val.getencodedname()] = Worker(val)
+                    logging.info('starting job %s', val.getencodedname())
                     self.workers[val.getencodedname()].run()
                     val.setnextruntime()
 
@@ -271,6 +277,7 @@ class AgentManager(threading.Thread):
         tempkeys = list(self.workers.keys())
         for key in tempkeys:
             if not self.workers.get(key).isrunning():
+                logging.info('finshing job %s', key)
                 self.workers[key].close()
                 if self.workers[key].gettimeframe() == 'S':
                     #single ran 1 time remove from nextwork
@@ -302,7 +309,7 @@ class Worker(object):
         self._subp = None
         self._scheduledjobdata = scheduledjobdata
         self._joboutputfile = None
-        self._datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+        self._datestring = datetime.datetime.now().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
         self._started = False
 
     def getpid(self):
