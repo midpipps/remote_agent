@@ -34,7 +34,7 @@ class ThreadTalk(object):
         if self.hasmessages(processkey):
             return self._threaddata[processkey].get()
         return None
-    
+
     def destroyprocesskey(self, processkey):
         '''
         remove the processkey and all data associated with it

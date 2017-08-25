@@ -120,9 +120,29 @@ class AgentServerProtocol(asyncio.Protocol):
                 #will want to create a special id for these sooner or later so there is no cross talk
                 configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'running process list')
                 while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
-                    time.sleep(configuration.THREADUDPATETIMING)
+                    time.sleep(1)
                 queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
                 self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
+            elif self.current_job and self.current_job == 'GETWORKQUEUE':
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'workqueue list')
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(1)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
+            elif self.current_job and self.current_job == 'GETOUTPUTFROMPROCESS':
+                processname = self.getnextline(True)
+                returnstring = ''
+                try:
+                    logging.info('Reading output file "%s"', processname)
+                    with open(configuration.TEMPSCANSFOLDER + processname.replace('/', '').replace('\\', ''), 'r') as fil:
+                        returnstring = fil.read()
+                except IOError:
+                    logging.error('Reading output file "%s" failed with ioerror', processname)
+                    returnstring = "File does not exists or filename incorrect"
+                self.sendmessage(returnstring.encode("UTF-8"))
+                self.transport.close()
             else:
                 logging.debug('Closing connection as there is nothing to do')
                 self.current_job = None
