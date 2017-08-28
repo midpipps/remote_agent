@@ -131,6 +131,14 @@ class AgentServerProtocol(asyncio.Protocol):
                 queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
                 self.sendmessage(queueitem[1].encode("UTF-8"))
                 self.transport.close()
+            elif self.current_job and self.current_job == 'IMMEDIATEJOBDATA':
+                newwork = processname = self.getnextline(True)
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'IMMEDIATEJOBDATA', newwork)
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(1)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
             elif self.current_job and self.current_job == 'GETOUTPUTFROMPROCESS':
                 processname = self.getnextline(True)
                 returnstring = ''

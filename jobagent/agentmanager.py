@@ -77,7 +77,7 @@ class ScheduledJobData(object):
                 self.nextruntime = datetime.datetime.now()
                 return
             elif self.timeframe == 'S':
-                #Instantaneous need to run the scan as soon as possible
+                #Single need to run the scan as soon as possible
                 self.nextruntime = datetime.datetime.now()
                 return
             else:
@@ -238,9 +238,24 @@ class AgentManager(threading.Thread):
                     returnstring += workqueueitem.timeframe + "|" + workqueueitem.command + "|" + workqueueitem.options + '|' + (workqueueitem.nextruntime.strftime(ScheduledJobData.LOGTIMEFORMAT) if workqueueitem.nextruntime else 'No run scheduled') + '\n'
                 configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
             elif queueitem[1] == 'running process list':
-                returnstring = 'PID|JOBSTRING|FILENAME\n'
+                returnstring = 'PID|JOBSTRING|FILENAME|ENCODEDNAME\n'
                 for worker in self.workers.values():
-                    returnstring += str(worker.getpid()) + '|' + worker.getjobstring() + '|' + worker.getjoboutputfilename() + '\n'
+                    returnstring += str(worker.getpid()) + '|' + worker.getjobstring() + '|' + worker.getjoboutputfilename() + '|' + worker.getencodedname() + '\n'
+                configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
+            elif queueitem[1] == 'IMMEDIATEJOBDATA':
+                returnstring = 'Job Added\n'
+                if queueitem[2] not in self.nextwork:
+                    try:
+                        self.nextwork[queueitem[2]] = ScheduledJobData(('S\t' + queueitem[2]), self.jobtypes.get(queueitem[2].split('\t')[0]))
+                        returnstring = self.nextwork[queueitem[2]].getencodedname()
+                    except ValueError as valerr:
+                        logging.error(valerr)
+                        returnstring = 'Job Val Error\n'
+                    except Exception as ex:
+                        logging.error(ex)
+                        returnstring = 'Job Exception\n'
+                else:
+                    returnstring = 'Job already exists\n'
                 configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
 
     def keepworkqueuworking(self):
@@ -258,12 +273,11 @@ class AgentManager(threading.Thread):
                     tempcounts[val.getcommand()] += 1
 
             #now look for workitems that are not running that should be running
-            for val in self.nextwork.values():
+            for val in sorted(self.nextwork.values(), key=lambda x: x.nextruntime):
                 if self.jobneedsrun(val, tempcounts):
                     self.workers[val.getencodedname()] = Worker(val)
                     logging.info('starting job %s', val.getencodedname())
                     self.workers[val.getencodedname()].run()
-                    val.setnextruntime()
 
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
@@ -309,7 +323,7 @@ class Worker(object):
         self._subp = None
         self._scheduledjobdata = scheduledjobdata
         self._joboutputfile = None
-        self._datestring = datetime.datetime.now().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+        self._datestring = self._scheduledjobdata.nextruntime.strftime(configuration.DATETIMEFILEAPPENDFORMAT)
         self._started = False
 
     def getpid(self):
@@ -338,9 +352,12 @@ class Worker(object):
         '''
         logging.debug('the starting job array is %s', self.getjobarray())
         self._joboutputfile = open(configuration.TEMPSCANSFOLDER + self.getjoboutputfilename(), 'w')
-        self._subp = subprocess.Popen(self.getjobarray(), stdout=self._joboutputfile, stderr=subprocess.STDOUT)
+        self._subp = subprocess.Popen(self.getjobarray(),
+                                      stdout=self._joboutputfile,
+                                      stderr=subprocess.STDOUT)
         self._started = True
         self._scheduledjobdata.addlog(ScheduledJobData.JOBSTARTSTRING)
+        self._scheduledjobdata.setnextruntime()
 
     def getjobarray(self):
         '''
@@ -362,10 +379,12 @@ class Worker(object):
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname() + self._scheduledjobdata.jobtype.output_extension,
+                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname() + self._scheduledjobdata.jobtype.output_extension)
+                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
 
@@ -411,3 +430,9 @@ class Worker(object):
         get the jobdata command
         '''
         return self._scheduledjobdata.command
+
+    def getencodedname(self):
+        '''
+        get encodedname of the jobdata
+        '''
+        return self._scheduledjobdata.getencodedname()
