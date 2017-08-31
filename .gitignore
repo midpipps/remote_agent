@@ -4,6 +4,7 @@ flaskcontrol/static/received/
 jobagent/results/
 jobagent/futurescans/
 jobagent/agent_config.ini
+jobagent/job_config.cfg
 /*.xml
 
 #vscode ignore
