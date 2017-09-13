@@ -112,6 +112,8 @@ class ScheduledJobData(object):
             #unknown timebase do not run
             self.nextruntime = None
             self.addlog("Unknown Time Base did not run")
+        if self.nextruntime and self.nextruntime < datetime.datetime.now():
+            self.nextruntime = datetime.datetime.now()
     def needsrun(self):
         '''
         checks the log files to see if it should be run based on its time base
@@ -247,7 +249,7 @@ class AgentManager(threading.Thread):
                 if queueitem[2] not in self.nextwork:
                     try:
                         self.nextwork[queueitem[2]] = ScheduledJobData(('S\t' + queueitem[2]), self.jobtypes.get(queueitem[2].split('\t')[0]))
-                        returnstring = self.nextwork[queueitem[2]].getencodedname()
+                        returnstring = self.nextwork[queueitem[2]].getencodedname() + '\n'
                     except ValueError as valerr:
                         logging.error(valerr)
                         returnstring = 'Job Val Error\n'
