@@ -325,7 +325,7 @@ class Worker(object):
         self._subp = None
         self._scheduledjobdata = scheduledjobdata
         self._joboutputfile = None
-        self._datestring = self._scheduledjobdata.nextruntime.strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+        self._datestring = datetime.datetime.now().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
         self._started = False
 
     def getpid(self):
