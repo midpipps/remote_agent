@@ -17,18 +17,26 @@ class ScheduledJobData(object):
     Class of worker jobs will parse out the job into its
     component pieces
     '''
+
+    LOGTIMEFORMAT = '%Y-%m-%d %H:%M:%S'
+    JOBSTARTSTRING = 'Started'
+    JOBENDSTRING = 'Finished'
+
     def __init__(self, thedata=None, jobtype=None):
         '''
         class initialization
         '''
+        self.nextruntime = None
         self.timeframe = ''
         self.command = ''
         self.options = ''
+        self.jobstring = thedata
         if not jobtype:
             raise ValueError('jobs must have jobtype to run')
         self.jobtype = jobtype
         if thedata:
             self.parsejob(thedata)
+        self.setnextruntime()
 
     def parsejob(self, thejob):
         '''
@@ -48,31 +56,69 @@ class ScheduledJobData(object):
         '''
         return base64.b64encode(bytes(self.timeframe + self.command + self.options, 'UTF-8')).decode('UTF-8')
 
-    def getjobarray(self):
+    def addlog(self, message):
         '''
-        takes the data it has of commands and options and created the array for the processing
+        add a entry into the log file
         '''
-        tempoutputstring = self.jobtype.output_formatstring.format((configuration.TEMPSCANSFOLDER +
-                                                                    datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '-' +
-                                                                    self.getencodedname() + self.jobtype.output_extension))
-        tempcommandstring = self.jobtype.program.format(self.options, tempoutputstring)
-        temp = shlex.split(tempcommandstring)
-        logging.debug(temp)
-        return temp
+        with open(configuration.FUTURESCANSFOLDER + self.getencodedname() + ".log", 'a') as scanlog:
+            scanlog.write(datetime.datetime.now().strftime(ScheduledJobData.LOGTIMEFORMAT) + ' - ' + message + '\n')
 
-    def moveresult(self, datestring):
+    def setnextruntime(self):
         '''
-        moves the output files of the scans from 1 place to another
+        Set the next run time for the process
         '''
-        try:
-            shutil.move(configuration.TEMPSCANSFOLDER +
-                        datestring + '-' +
-                        self.getencodedname() + self.jobtype.output_extension,
-                        configuration.RESULTSLOCATION +
-                        datestring + '-' +
-                        self.getencodedname() + self.jobtype.output_extension)
-        except Exception as ex:
-            logging.error("There was an error moving the result files" + str(ex))
+        finalstartdate = self.nextruntime
+        if not self.nextruntime:
+            if not os.path.exists(configuration.FUTURESCANSFOLDER +
+                                  self.getencodedname() + '.log'):
+                #if the file does not exist then we need to create it which means it has not run and should be in line to run
+                fil = open(configuration.FUTURESCANSFOLDER + self.getencodedname() + '.log', 'x')
+                fil.close()
+                self.nextruntime = datetime.datetime.now()
+                return
+            elif self.timeframe == 'S':
+                #Single need to run the scan as soon as possible
+                self.nextruntime = datetime.datetime.now()
+                return
+            else:
+                #we need to check the file for last completed run and compare it to the
+                #run schedule to figure out if we need a run on it or not.
+                finalstart = ''
+                with open(configuration.FUTURESCANSFOLDER + self.getencodedname() + '.log', 'r') as scanlog:
+                    #TODO this needs a rewrite to loop reverse or seek for the last line
+                    for line in scanlog:
+                        #find the last started run of this file
+                        if ScheduledJobData.JOBSTARTSTRING in line:
+                            finalstart = line
+
+                #pull the date
+                if ' - ' in finalstart:
+                    finalstartdate = datetime.datetime.strptime(finalstart.split(' - ')[0], ScheduledJobData.LOGTIMEFORMAT)
+                else:
+                    self.nextruntime = datetime.datetime.now()
+                    return
+
+        #update the nextruntime based on field
+        if self.timeframe == 'H' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(hours=1)
+        elif self.timeframe == 'D' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(days=1)
+        elif self.timeframe == 'M' and finalstartdate:
+            self.nextruntime = finalstartdate + datetime.timedelta(days=32)
+            self.nextruntime = self.nextruntime.replace(day=1)
+        elif self.timeframe == 'Y' and finalstartdate:
+            self.nextruntime = finalstartdate.replace(year=finalstartdate.year + 1, month=1, day=1)
+        else:
+            #unknown timebase do not run
+            self.nextruntime = None
+            self.addlog("Unknown Time Base did not run")
+        if self.nextruntime and self.nextruntime < datetime.datetime.now():
+            self.nextruntime = datetime.datetime.now()
+    def needsrun(self):
+        '''
+        checks the log files to see if it should be run based on its time base
+        '''
+        return self.nextruntime and self.nextruntime < datetime.datetime.now()
 
 class JobType(object):
     '''
@@ -132,8 +178,8 @@ class AgentManager(threading.Thread):
             if data not in self.nextwork:
                 try:
                     self.nextwork[data] = ScheduledJobData(data, self.jobtypes.get(data.split('\t')[1]))
-                except ValueError as ve:
-                    logging.error(ve)
+                except ValueError as valerr:
+                    logging.error(valerr)
                 except Exception as ex:
                     logging.error(ex)
 
@@ -162,11 +208,11 @@ class AgentManager(threading.Thread):
         '''
         checks the queue for any new items and processes them if needed.
         '''
-        if not configuration.WORKQUEUEU.empty():
+        if configuration.MESSAGES.hasmessages(configuration.MANAGERKEY):
             #the queue has stuff in it we should probably act upon it
             logging.debug('data found in queue working on it')
-            queueitem = configuration.WORKQUEUEU.get()
-            if queueitem == 'schedule file changed':
+            queueitem = configuration.MESSAGES.getnextmessage(configuration.MANAGERKEY)
+            if queueitem[1] == 'schedule file changed':
                 if os.path.exists(configuration.FUTURESCANSFOLDER + configuration.FUTURESCANSFILE):
                     fil = open(configuration.FUTURESCANSFOLDER + configuration.FUTURESCANSFILE, 'r')
                     filedata = fil.readlines()
@@ -177,8 +223,8 @@ class AgentManager(threading.Thread):
                         if data not in self.nextwork:
                             try:
                                 self.nextwork[data] = ScheduledJobData(data, self.jobtypes.get(data.split('\t')[1]))
-                            except ValueError as ve:
-                                logging.error(ve)
+                            except ValueError as valerr:
+                                logging.error(valerr)
                             except Exception as ex:
                                 logging.error(ex)
                     networkkeylist = list(self.nextwork.keys())
@@ -188,6 +234,31 @@ class AgentManager(threading.Thread):
                     logging.debug(str(self.nextwork))
                 else:
                     logging.error('The file was locked or does not exist will try to reload later')
+            elif queueitem[1] == 'workqueue list':
+                returnstring = 'TIMEFRAME|COMMAND|OPTIONS|NEXTRUNTIME\n'
+                for workqueueitem in self.nextwork.values():
+                    returnstring += workqueueitem.timeframe + "|" + workqueueitem.command + "|" + workqueueitem.options + '|' + (workqueueitem.nextruntime.strftime(ScheduledJobData.LOGTIMEFORMAT) if workqueueitem.nextruntime else 'No run scheduled') + '\n'
+                configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
+            elif queueitem[1] == 'running process list':
+                returnstring = 'PID|JOBSTRING|FILENAME|ENCODEDNAME\n'
+                for worker in self.workers.values():
+                    returnstring += str(worker.getpid()) + '|' + worker.getjobstring() + '|' + worker.getjoboutputfilename() + '|' + worker.getencodedname() + '\n'
+                configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
+            elif queueitem[1] == 'IMMEDIATEJOBDATA':
+                returnstring = 'Job Added\n'
+                if queueitem[2] not in self.nextwork:
+                    try:
+                        self.nextwork[queueitem[2]] = ScheduledJobData(('S\t' + queueitem[2]), self.jobtypes.get(queueitem[2].split('\t')[0]))
+                        returnstring = self.nextwork[queueitem[2]].getencodedname() + '\n'
+                    except ValueError as valerr:
+                        logging.error(valerr)
+                        returnstring = 'Job Val Error\n'
+                    except Exception as ex:
+                        logging.error(ex)
+                        returnstring = 'Job Exception\n'
+                else:
+                    returnstring = 'Job already exists\n'
+                configuration.MESSAGES.sendmessage(queueitem[0], configuration.MANAGERKEY, returnstring)
 
     def keepworkqueuworking(self):
         '''
@@ -195,50 +266,21 @@ class AgentManager(threading.Thread):
         '''
         #now on to setting up workers if we have not so far set them up
         if len(self.workers) < configuration.MAXSCANNERS and len(self.nextwork) > 0:
-            if not os.path.exists(configuration.FUTURESCANSFOLDER +
-                                  datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) +
-                                  '.log'):
-                fil = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '.log', 'x')
-                fil.close()
-            scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT) + '.log', 'r')
-            scanloglines = scanlog.readlines()
-            scanlog.close()
-            if not os.path.exists(configuration.FUTURESCANSFOLDER +
-                                  datetime.date.today().strftime(configuration.DATETIMEMONTHLYSCANFORMAT) +
-                                  '.log'):
-                fil = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEMONTHLYSCANFORMAT) + '.log', 'x')
-                fil.close()
-            scanlog = open(configuration.FUTURESCANSFOLDER + datetime.date.today().strftime(configuration.DATETIMEMONTHLYSCANFORMAT) + '.log', 'r')
-            scanloglines += scanlog.readlines()
-            scanlog.close()
-            #loop over the list of workers and get how many jobs are of this type also if debugging is enabled lets dump some output too
+            #loop over the list of workers and get how many jobs are of this type
             tempcounts = {}
-            for key, val in self.workers.items():
-                if not tempcounts.get(val[1].command):
-                    tempcounts[val[1].command] = 1
+            for val in self.workers.values():
+                if not tempcounts.get(val.getcommand()):
+                    tempcounts[val.getcommand()] = 1
                 else:
-                    tempcounts[val[1].command] += 1
-            for key, val in self.nextwork.items():
-                if ((val.getencodedname() + ' Finished\n') not in scanloglines and
-                        val.getencodedname() not in self.workers and
-                        len(self.workers) < configuration.MAXSCANNERS and
-                        (not tempcounts.get(val.command) or tempcounts.get(val.command) < val.jobtype.max_workers)):
-                    logging.info('adding scan "%s" to worker processing', val.getencodedname() + ' Started')
-                    if val.timeframe == 'M':
-                        formatstring = configuration.DATETIMEMONTHLYSCANFORMAT
-                    elif val.timeframe == 'D':
-                        formatstring = configuration.DATETIMEFILEAPPENDFORMAT
-                    loglocation = (configuration.FUTURESCANSFOLDER +
-                                   datetime.date.today().strftime(formatstring) +
-                                   '.log')
-                    scanlog = open(loglocation, 'a')
-                    scanlog.write(val.getencodedname() + ' Started\n')
-                    scanlog.close()
-                    logging.debug('the job array is %s', val.getjobarray())
-                    datestring = datetime.date.today().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
-                    outputvalue = open(configuration.TEMPSCANSFOLDER + datestring + '-' + val.getencodedname() + ".output", 'w')
-                    self.workers[val.getencodedname()] = (subprocess.Popen(val.getjobarray(), stdout=outputvalue, stderr=subprocess.STDOUT),
-                                                          val, outputvalue, datestring, loglocation)
+                    tempcounts[val.getcommand()] += 1
+
+            #now look for workitems that are not running that should be running
+            for val in sorted(self.nextwork.values(), key=lambda x: x.nextruntime):
+                if self.jobneedsrun(val, tempcounts):
+                    self.workers[val.getencodedname()] = Worker(val)
+                    logging.info('starting job %s', val.getencodedname())
+                    self.workers[val.getencodedname()].run()
+
                     if not tempcounts.get(val.command):
                         tempcounts[val.command] = 1
                     else:
@@ -250,11 +292,149 @@ class AgentManager(threading.Thread):
         '''
         tempkeys = list(self.workers.keys())
         for key in tempkeys:
-            if self.workers.get(key)[0].poll() is not None:
-                self.workers[key][2].close()
-                self.workers[key][1].moveresult(self.workers[key][3])
-                scanlog = open(self.workers[key][4], 'a')
-                scanlog.write(key + ' Finished\n')
-                scanlog.close()
+            if not self.workers.get(key).isrunning():
+                logging.info('finshing job %s', key)
+                self.workers[key].close()
+                if self.workers[key].gettimeframe() == 'S':
+                    #single ran 1 time remove from nextwork
+                    self.nextwork.pop(self.workers[key].getjobstring(), None)
                 del self.workers[key]
         logging.debug("Num active workers %d", len(self.workers))
+
+    def jobneedsrun(self, scheduledjobdata, jobtypecounts):
+        '''
+        Check if the job even needs to run right now using jobcounts and logs
+        '''
+        returnvalue = True
+        returnvalue = returnvalue and scheduledjobdata.getencodedname() not in self.workers
+        returnvalue = returnvalue and len(self.workers) < configuration.MAXSCANNERS
+        returnvalue = (returnvalue and
+                       (not jobtypecounts.get(scheduledjobdata.command) or
+                        jobtypecounts.get(scheduledjobdata.command) < scheduledjobdata.jobtype.max_workers))
+        returnvalue = returnvalue and scheduledjobdata.needsrun()
+        return returnvalue
+
+class Worker(object):
+    '''
+    Keep track of all the data from the worker
+    '''
+    def __init__(self, scheduledjobdata=None):
+        '''
+        Constructor
+        '''
+        self._subp = None
+        self._scheduledjobdata = scheduledjobdata
+        self._joboutputfile = None
+        self._datestring = datetime.datetime.now().strftime(configuration.DATETIMEFILEAPPENDFORMAT)
+        self._started = False
+
+    def getpid(self):
+        '''
+        get the processid of the current process
+        '''
+        return self._subp.pid
+
+    def isrunning(self):
+        '''
+        check if the process is running
+        '''
+        return self._started and self._subp and self._subp.poll() is None
+
+    def close(self):
+        '''
+        close/cleanup whatever we have running
+        '''
+        self.moveresult()
+        self._joboutputfile.close()
+        self._scheduledjobdata.addlog(ScheduledJobData.JOBENDSTRING)
+
+    def run(self):
+        '''
+        setup and start the sub process
+        '''
+        logging.debug('the starting job array is %s', self.getjobarray())
+        self._joboutputfile = open(configuration.TEMPSCANSFOLDER + self.getjoboutputfilename(), 'w')
+        self._subp = subprocess.Popen(self.getjobarray(),
+                                      stdout=self._joboutputfile,
+                                      stderr=subprocess.STDOUT)
+        self._started = True
+        self._scheduledjobdata.addlog(ScheduledJobData.JOBSTARTSTRING)
+        self._scheduledjobdata.setnextruntime()
+
+    def getjobarray(self):
+        '''
+        takes the data it has of commands and options and created the array for the processing
+        '''
+        tempoutputstring = self._scheduledjobdata.jobtype.output_formatstring.format((configuration.TEMPSCANSFOLDER +
+                                                                                      self._datestring + '-' +
+                                                                                      self._scheduledjobdata.getencodedname() +
+                                                                                      self._scheduledjobdata.jobtype.output_extension))
+        tempcommandstring = self._scheduledjobdata.jobtype.program.format(self._scheduledjobdata.options, tempoutputstring)
+        temp = shlex.split(tempcommandstring)
+        logging.debug(temp)
+        return temp
+
+    def moveresult(self):
+        '''
+        moves the output files of the scans from 1 place to another
+        '''
+        try:
+            shutil.move(configuration.TEMPSCANSFOLDER +
+                        self._datestring + '-' +
+                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.jobtype.output_extension,
+                        configuration.RESULTSLOCATION +
+                        self._datestring + '-' +
+                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.jobtype.output_extension)
+        except Exception as ex:
+            logging.error("There was an error moving the result files" + str(ex))
+
+    def forcekill(self):
+        '''
+        kill the process no cleanup should only really be used for immediate shutdowns
+        otherwise stop should be used as it will close things nicer
+        '''
+        if self._subp:
+            self._subp.kill()
+            self._started = False
+
+    def stop(self):
+        '''
+        terminate the process follow standard cleanup processes of closing the output
+        and others
+        '''
+        if self._subp:
+            self._subp.terminate()
+            self.close()
+            self._started = False
+
+    def getjobstring(self):
+        '''
+        get the jobstring from the scheduled job data
+        '''
+        return self._scheduledjobdata.jobstring
+
+    def gettimeframe(self):
+        '''
+        get the timeframe from the scheduled job data
+        '''
+        return self._scheduledjobdata.timeframe
+
+    def getjoboutputfilename(self):
+        '''
+        get the output filename for the job
+        '''
+        return self._datestring + '-' + self._scheduledjobdata.getencodedname() + ".output"
+
+    def getcommand(self):
+        '''
+        get the jobdata command
+        '''
+        return self._scheduledjobdata.command
+
+    def getencodedname(self):
+        '''
+        get encodedname of the jobdata
+        '''
+        return self._scheduledjobdata.getencodedname()

@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 import configuration
 from cryptography.fernet import Fernet
 
@@ -59,6 +60,7 @@ class AgentServerProtocol(asyncio.Protocol):
             self.recieveddata = self.recieveddata[self.bytecount + 1:]
             self.bytecount = -1
 
+            #pull out the current job information
             logging.debug('Recieved "%s"', self.operatingdata)
             if not self.current_job:
                 self.current_job = self.getnextline(True)
@@ -66,8 +68,8 @@ class AgentServerProtocol(asyncio.Protocol):
                 logging.info('operatingdata is: %s', self.operatingdata)
 
             if self.current_job and self.current_job == 'GETFILES':
+                #sends the files one by one to the calling system
                 onlyfiles = [f for f in os.listdir(configuration.RESULTSLOCATION) if os.path.isfile(os.path.join(configuration.RESULTSLOCATION, f))]
-                numfiles = len(onlyfiles)
                 if onlyfiles:
                     logging.debug('Sending %s', onlyfiles[0])
                     test = open(configuration.RESULTSLOCATION + onlyfiles[0], 'rb')
@@ -78,7 +80,7 @@ class AgentServerProtocol(asyncio.Protocol):
                 else:
                     self.transport.close()
             elif self.current_job and self.current_job == 'RECEIVEDFILE':
-                #moves the jobs that have been received to the sent data
+                #moves the jobs that have been received by the calling system to the sent data
                 filename = self.getnextline(True)
                 if os.path.exists(configuration.RESULTSLOCATION + filename):
                     shutil.move(configuration.RESULTSLOCATION + filename,
@@ -100,7 +102,7 @@ class AgentServerProtocol(asyncio.Protocol):
                     outfil.close()
                     self.current_job = None
                     self.transport.close()
-                    configuration.WORKQUEUEU.put('schedule file changed')
+                    configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'schedule file changed')
                 self.sendmessage(('DONE\n').encode('UTF-8'))
             elif self.current_job and self.current_job == 'CURRENTJOBDATA':
                 temp = ""
@@ -114,6 +116,41 @@ class AgentServerProtocol(asyncio.Protocol):
                 #this should stop all scanning
                 self.transport.close()
                 self.loop.stop()
+            elif self.current_job and self.current_job == 'GETRUNNINGPROCESSES':
+                #will want to create a special id for these sooner or later so there is no cross talk
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'running process list')
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(1)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
+            elif self.current_job and self.current_job == 'GETWORKQUEUE':
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'workqueue list')
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(1)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
+            elif self.current_job and self.current_job == 'IMMEDIATEJOBDATA':
+                newwork = self.getnextline(True)
+                configuration.MESSAGES.sendmessage(configuration.MANAGERKEY, configuration.SERVERKEY,'IMMEDIATEJOBDATA', newwork)
+                while not configuration.MESSAGES.hasmessages(configuration.SERVERKEY):
+                    time.sleep(1)
+                queueitem = configuration.MESSAGES.getnextmessage(configuration.SERVERKEY)
+                self.sendmessage(queueitem[1].encode("UTF-8"))
+                self.transport.close()
+            elif self.current_job and self.current_job == 'GETOUTPUTFROMPROCESS':
+                processname = self.getnextline(True)
+                returnstring = ''
+                try:
+                    logging.info('Reading output file "%s"', processname)
+                    with open(configuration.TEMPSCANSFOLDER + processname.replace('/', '').replace('\\', ''), 'r') as fil:
+                        returnstring = fil.read()
+                except IOError:
+                    logging.error('Reading output file "%s" failed with ioerror', processname)
+                    returnstring = "File does not exists or filename incorrect"
+                self.sendmessage(returnstring.encode("UTF-8"))
+                self.transport.close()
             else:
                 logging.debug('Closing connection as there is nothing to do')
                 self.current_job = None
