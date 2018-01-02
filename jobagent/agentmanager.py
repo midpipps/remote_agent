@@ -381,11 +381,11 @@ class Worker(object):
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.getencodedname().replace('=', '\\=') +
                         self._scheduledjobdata.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname() +
+                        self._scheduledjobdata.getencodedname().replace('=', '\\=') +
                         self._scheduledjobdata.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
