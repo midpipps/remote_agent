@@ -37,6 +37,7 @@ class ScheduledJobData(object):
         if thedata:
             self.parsejob(thedata)
         self.setnextruntime()
+        self._encodedname = base64.b64encode(bytes(self.timeframe + self.command + self.options, 'UTF-8')).decode('UTF-8')
 
     def parsejob(self, thejob):
         '''
@@ -54,7 +55,7 @@ class ScheduledJobData(object):
         '''
         gets a encoded name that is usable as a filename
         '''
-        return base64.b64encode(bytes(self.timeframe + self.command + self.options, 'UTF-8')).decode('UTF-8')
+        return self._encodedname
 
     def addlog(self, message):
         '''
@@ -381,11 +382,11 @@ class Worker(object):
         try:
             shutil.move(configuration.TEMPSCANSFOLDER +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname().replace('=', '\\=') +
+                        self._scheduledjobdata.getencodedname() +
                         self._scheduledjobdata.jobtype.output_extension,
                         configuration.RESULTSLOCATION +
                         self._datestring + '-' +
-                        self._scheduledjobdata.getencodedname().replace('=', '\\=') +
+                        self._scheduledjobdata.getencodedname() +
                         self._scheduledjobdata.jobtype.output_extension)
         except Exception as ex:
             logging.error("There was an error moving the result files" + str(ex))
