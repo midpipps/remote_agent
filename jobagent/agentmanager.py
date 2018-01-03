@@ -36,8 +36,8 @@ class ScheduledJobData(object):
         self.jobtype = jobtype
         if thedata:
             self.parsejob(thedata)
-        self.setnextruntime()
         self._encodedname = base64.b64encode(bytes(self.timeframe + self.command + self.options, 'UTF-8')).decode('UTF-8')
+        self.setnextruntime()
 
     def parsejob(self, thejob):
         '''
