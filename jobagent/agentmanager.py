@@ -146,7 +146,7 @@ class JobType(object):
         if '\t' in thedata:
             thedata = thedata.split('\t')
             if len(thedata) < 5:
-                raise ValueError('JobType must have at least 3 tabs to parse correctly')
+                raise ValueError('JobType must have at least 4 tabs to parse correctly')
             self.code = thedata[0]
             self.program = thedata[1]
             self.max_workers = int(thedata[2])

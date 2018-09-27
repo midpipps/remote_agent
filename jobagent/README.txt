@@ -16,7 +16,7 @@ Possible configurations
 Config_Job_Options file
 Process Code\tprogram executable file location\tMax Number of workers for this job\tswitchoutputformatstring\toutputextension
 Ex.
-N	nmap {0} {1}	1	-oX {}  xml
+N	nmap {0} {1}	1	-oX {}	xml
 {0} - Where the commands will go
 {1} - Where the output file call will go
 Process Code - The code that the nextscans information will use to pick the program
@@ -28,9 +28,9 @@ Output Extension - The output extension you would like on the file.
 nextscans File layout
 Reoccur Code\tProcessCode\tswitchesandoptions
 Ex.
-D	N	10.2.130.250 -p 21,80 -v -sV
+D{#}	N	10.2.130.250 -p 21,80 -v -sV
 
-Code - D:Daily, M:Monthly
+Code - H:Hourly, D:Daily, M:Monthly, Y:Yearly optional number H2 at least 2 hours between times running this command.
 Process Code - Pulled from Config_Job_Options
 Switches and options - The extra switches and data you would like to send the program no tabs or it will break
 
