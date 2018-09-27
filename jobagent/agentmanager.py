@@ -28,6 +28,7 @@ class ScheduledJobData(object):
         '''
         self.nextruntime = None
         self.timeframe = ''
+        self.timeframenumber = 1
         self.command = ''
         self.options = ''
         self.jobstring = thedata
@@ -47,7 +48,11 @@ class ScheduledJobData(object):
             thejob = thejob.split('\t')
             if len(thejob) < 3:
                 raise ValueError('jobs must have at least 3 tabs to parse correctly')
-            self.timeframe = thejob[0]
+            if len(thejob[0].strip()) > 1:
+                self.timeframe = thejob[0].strip()[0]
+                self.timeframenumber = int(thejob[0].strip()[1:].strip())
+            else:
+                self.timeframe = thejob[0][0]
             self.command = thejob[1]
             self.options = thejob[2].replace('\n', '')
 
@@ -101,14 +106,14 @@ class ScheduledJobData(object):
 
         #update the nextruntime based on field
         if self.timeframe == 'H' and finalstartdate:
-            self.nextruntime = finalstartdate + datetime.timedelta(hours=1)
+            self.nextruntime = finalstartdate + datetime.timedelta(hours=self.timeframenumber)
         elif self.timeframe == 'D' and finalstartdate:
-            self.nextruntime = finalstartdate + datetime.timedelta(days=1)
+            self.nextruntime = finalstartdate + datetime.timedelta(days=self.timeframenumber)
         elif self.timeframe == 'M' and finalstartdate:
-            self.nextruntime = finalstartdate + datetime.timedelta(days=32)
+            self.nextruntime = finalstartdate + datetime.timedelta(days=(self.timeframenumber * 32))
             self.nextruntime = self.nextruntime.replace(day=1)
         elif self.timeframe == 'Y' and finalstartdate:
-            self.nextruntime = finalstartdate.replace(year=finalstartdate.year + 1, month=1, day=1)
+            self.nextruntime = finalstartdate.replace(year=finalstartdate.year + self.timeframenumber, month=1, day=1)
         else:
             #unknown timebase do not run
             self.nextruntime = None
